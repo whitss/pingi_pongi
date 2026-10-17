@@ -77,10 +77,15 @@ def load_data():
                 return json.load(f)
         except:
             pass
-    return {"p1_power": None, "p2_power": None, "fury_mode": False}
+    return {"p1_power": None, "p2_power": None, "fury_mode": False, "selected_ball": "tenis_ball.png"}
 
 game_data = load_data()
 fury_mode_enabled = game_data.get("fury_mode", False)
+
+BALL_OPTIONS = ["tenis_ball.png", "tenis_ball2.png", "tenis_ball3.png"]
+selected_ball_image = game_data.get("selected_ball", "tenis_ball.png")
+if selected_ball_image not in BALL_OPTIONS:
+    selected_ball_image = "tenis_ball.png"
 
 POWER_LIST = [
     "Ninguno",
@@ -98,12 +103,18 @@ POWER_LIST = [
 class GameSprite(sprite.Sprite):
     def __init__(self, player_image, player_x, player_y, player_speed, wight, height):
         super().__init__()
-        self.original_image = transform.scale(image.load(player_image), (wight, height))
+        self.image_path = player_image
+        self.original_image = self.load_scaled_image(player_image, wight, height)
         self.image = self.original_image.copy()
         self.speed = player_speed
         self.rect = self.image.get_rect()
         self.rect.x = player_x
         self.rect.y = player_y
+
+    def load_scaled_image(self, path, w, h):
+        if not os.path.exists(path):
+            path = 'tenis_ball.png' if 'ball' in path else 'racket.png'
+        return transform.scale(image.load(path), (w, h))
 
     def reset(self):
         window.blit(self.image, (self.rect.x, self.rect.y))
@@ -120,8 +131,9 @@ class BallSprite(GameSprite):
         self.rect = rotated_image.get_rect(center=old_center)
         window.blit(rotated_image, self.rect.topleft)
 
-    def set_size(self, w, h):
-        self.original_image = transform.scale(image.load('tenis_ball.png'), (w, h))
+    def set_size_and_image(self, w, h, img_path):
+        self.image_path = img_path
+        self.original_image = self.load_scaled_image(img_path, w, h)
 
 class Player(GameSprite):
     def __init__(self, player_image, player_x, player_y, player_speed, wight, height, is_left=True):
@@ -131,7 +143,7 @@ class Player(GameSprite):
         self.is_left = is_left
         self.power = None
         self.pending_power = False
-        self.move_start_time = None  # Para la aceleración pasiva exponencial
+        self.move_start_time = None
         self.big_racket_time = 0
         self.inverted_controls = False
         self.invert_consumed = False
@@ -152,7 +164,6 @@ class Player(GameSprite):
 
         curr_speed = self.speed + extra_speed
 
-        # Aceleración Explosiva Pasiva Exponencial
         if self.power == "Aceleracion Explosiva" and is_moving:
             if self.move_start_time is None:
                 self.move_start_time = py_time.time()
@@ -167,7 +178,7 @@ class Player(GameSprite):
             self.move_start_time = None
 
         if slow_down:
-            curr_speed = 1.0  # Ralentización en modo furia
+            curr_speed = 1.0
 
         self.move_dir = 0
         if up and self.rect.y > 5:
@@ -192,7 +203,7 @@ class Player(GameSprite):
 # Instancias principales
 racket1 = Player('racket.png', 30, 200, 4, 25, 75, is_left=True)
 racket2 = Player('racket.png', 520, 200, 4, 25, 75, is_left=False)
-ball = BallSprite('tenis_ball.png', 275, 225, 4, 50, 50)
+ball = BallSprite(selected_ball_image, 275, 225, 4, 50, 50)
 
 racket1.power = game_data.get("p1_power")
 racket2.power = game_data.get("p2_power")
@@ -231,9 +242,9 @@ def reset_ball_and_rackets():
     speed_y = random.choice([-base_spd, base_spd])
     
     if fury_mode_enabled:
-        ball.set_size(25, 25)
+        ball.set_size_and_image(25, 25, selected_ball_image)
     else:
-        ball.set_size(50, 50)
+        ball.set_size_and_image(50, 50, selected_ball_image)
         
     reset_shot_effects()
     total_bounces = 0
@@ -241,7 +252,6 @@ def reset_ball_and_rackets():
 def reset_shot_effects():
     global special_shot, shot_owner, speed_x, speed_y
     base_spd = 9 if fury_mode_enabled else 3
-    # Resetea la velocidad a la base normal de forma limpia e independiente de la fuerza anterior
     speed_x = base_spd if speed_x > 0 else -base_spd
     speed_y = base_spd if speed_y > 0 else -base_spd
     special_shot = None
@@ -261,57 +271,85 @@ def start_countdown():
         py_time.sleep(1)
 
 def power_shop_menu():
+    global selected_ball_image
     selected_p1 = POWER_LIST.index(racket1.power) if racket1.power in POWER_LIST else 0
     selected_p2 = POWER_LIST.index(racket2.power) if racket2.power in POWER_LIST else 0
+    ball_idx = BALL_OPTIONS.index(selected_ball_image)
 
     in_shop = True
     clock = time.Clock()
 
     while in_shop:
         draw_background()
-        draw_text_center("TIENDA DE PODERES", font_large, BLACK, 20)
+        draw_text_center("TIENDA DE PODERES Y PELOTAS", font_large, BLACK, 15)
         
         p1_ctrl = font_small.render("P1: W/S Seleccionar | ESPACIO Confirmar", True, BLACK)
         p2_ctrl = font_small.render("P2: Flechas Seleccionar | ENTER Confirmar", True, BLACK)
-        window.blit(p1_ctrl, (10, 60))
-        window.blit(p2_ctrl, (310, 60))
+        window.blit(p1_ctrl, (10, 50))
+        window.blit(p2_ctrl, (310, 50))
 
-        draw_text_center("JUGADOR 1", font_medium, BLACK, 100)
+        # Poderes J1
+        draw_text_center("JUGADOR 1", font_medium, BLACK, 85)
         for i, pow_name in enumerate(POWER_LIST):
             prefix = "> " if i == selected_p1 else "  "
             txt = font_small.render(prefix + pow_name, True, BLACK)
-            window.blit(txt, (20, 130 + i * 32))
+            window.blit(txt, (20, 115 + i * 26))
 
-        draw_text_center("JUGADOR 2", font_medium, BLACK, 100)
+        # Poderes J2
+        draw_text_center("JUGADOR 2", font_medium, BLACK, 85)
         for i, pow_name in enumerate(POWER_LIST):
             prefix = "> " if i == selected_p2 else "  "
             txt = font_small.render(prefix + pow_name, True, BLACK)
-            window.blit(txt, (320, 130 + i * 32))
+            window.blit(txt, (320, 115 + i * 26))
+
+        # Switch de Pelotas en la parte inferior de la tienda
+        draw_text_center("--- CAMBIAR PELOTA (Teclas A / D) ---", font_medium, BLACK, 360)
+        
+        curr_ball_file = BALL_OPTIONS[ball_idx]
+        ball_txt = font_small.render(f"< Pelota Actual: {curr_ball_file} >", True, BLACK)
+        window.blit(ball_txt, (win_width // 2 - ball_txt.get_width() // 2, 395))
+
+        # Muestra visual de la pelota
+        try:
+            preview_path = curr_ball_file if os.path.exists(curr_ball_file) else 'tenis_ball.png'
+            ball_preview = transform.scale(image.load(preview_path), (40, 40))
+            window.blit(ball_preview, (win_width // 2 - 20, 418))
+        except:
+            pass
 
         back_txt = font_small.render("Presiona ESC para volver al menu principal", True, BLACK)
-        window.blit(back_txt, (win_width // 2 - back_txt.get_width() // 2, 460))
+        window.blit(back_txt, (win_width // 2 - back_txt.get_width() // 2, 470))
 
         display.update()
 
         for e in event.get():
             if e.type == QUIT:
-                save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled})
+                save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled, "selected_ball": selected_ball_image})
                 exit()
             elif e.type == KEYDOWN:
                 if e.key == K_ESCAPE:
                     in_shop = False
+                # P1 controles
                 elif e.key == K_w:
                     selected_p1 = (selected_p1 - 1) % len(POWER_LIST)
                 elif e.key == K_s:
                     selected_p1 = (selected_p1 + 1) % len(POWER_LIST)
                 elif e.key == K_SPACE:
                     racket1.power = POWER_LIST[selected_p1] if POWER_LIST[selected_p1] != "Ninguno" else None
+                # P2 controles
                 elif e.key == K_UP:
                     selected_p2 = (selected_p2 - 1) % len(POWER_LIST)
                 elif e.key == K_DOWN:
                     selected_p2 = (selected_p2 + 1) % len(POWER_LIST)
                 elif e.key == K_RETURN:
                     racket2.power = POWER_LIST[selected_p2] if POWER_LIST[selected_p2] != "Ninguno" else None
+                # Selector de Pelota
+                elif e.key == K_a:
+                    ball_idx = (ball_idx - 1) % len(BALL_OPTIONS)
+                    selected_ball_image = BALL_OPTIONS[ball_idx]
+                elif e.key == K_d:
+                    ball_idx = (ball_idx + 1) % len(BALL_OPTIONS)
+                    selected_ball_image = BALL_OPTIONS[ball_idx]
 
         clock.tick(30)
 
@@ -331,7 +369,7 @@ def main_menu():
             txt = font_medium.render(prefix + opt, True, BLACK)
             window.blit(txt, (win_width // 2 - 100, 220 + i * 50))
 
-        fury_check_txt = f"[ {'X' if fury_mode_enabled else ' '} ] Modo Furia (Tecla F)"
+        fury_check_txt = f"[ {'X' if fury_mode_enabled else ' '} ] Modo RAGEBAIT (Tecla F)"
         fury_rendered = font_small.render(fury_check_txt, True, BLACK)
         window.blit(fury_rendered, (win_width - fury_rendered.get_width() - 10, 10))
 
@@ -339,7 +377,7 @@ def main_menu():
 
         for e in event.get():
             if e.type == QUIT:
-                save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled})
+                save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled, "selected_ball": selected_ball_image})
                 exit()
             elif e.type == KEYDOWN:
                 if e.key == K_f:
@@ -354,7 +392,7 @@ def main_menu():
                     elif selected_option == 1:
                         power_shop_menu()
                     elif selected_option == 2:
-                        save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled})
+                        save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled, "selected_ball": selected_ball_image})
                         exit()
 
         clock.tick(30)
@@ -406,10 +444,8 @@ def execute_shot_power(player):
 
 # Bucle Global
 while True:
-    # Ejecutar Menú de Inicio
     main_menu()
 
-    # Selección de música para el juego
     if fury_mode_enabled:
         play_music('rude buster')
     else:
@@ -418,7 +454,6 @@ while True:
     reset_ball_and_rackets()
     start_countdown()
 
-    # Variables para alternar el fondo en modo furia
     map_change_timer = py_time.time()
     fury_bg_state = False
 
@@ -438,7 +473,7 @@ while True:
     while game:
         for e in event.get():
             if e.type == QUIT:
-                save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled})
+                save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled, "selected_ball": selected_ball_image})
                 exit()
             elif e.type == KEYDOWN:
                 if e.key == K_ESCAPE:
@@ -534,7 +569,6 @@ while True:
                 total_bounces += 1
                 if bounce_sound: bounce_sound.play()
                 
-                # Resetea la velocidad previa si no activa un nuevo tiro
                 reset_shot_effects()
 
                 if racket1.pending_power:
@@ -546,7 +580,6 @@ while True:
                 total_bounces += 1
                 if bounce_sound: bounce_sound.play()
                 
-                # Resetea la velocidad previa si no activa un nuevo tiro
                 reset_shot_effects()
 
                 if racket2.pending_power:
@@ -587,4 +620,4 @@ while True:
         display.update()
         clock.tick(FPS)
 
-    save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled})
+    save_data({"p1_power": racket1.power, "p2_power": racket2.power, "fury_mode": fury_mode_enabled, "selected_ball": selected_ball_image})
